@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+*.log
+# local settings and secrets never belong in the repo
+config.json
+.env
+changes.jsonl
+glass_1024.png
+glass_preview.png

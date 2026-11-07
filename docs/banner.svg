@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" role="img" aria-label="Raindrop Bookmark Admin Panel">
+<style>
+  text { font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; white-space: pre; }
+  .big { font-size: 19px; fill: #00e35a; }
+  .dim { font-size: 15px; fill: #0b7a35; }
+  .fg  { font-size: 15px; fill: #00e35a; }
+  .wht { font-size: 15px; fill: #ffffff; font-weight: 700; }
+  .cur { fill: #00e35a; }
+  @media (prefers-reduced-motion: no-preference) { .cur { animation: b 1.1s steps(1) infinite; } @keyframes b { 50% { opacity: 0; } } }
+</style>
+<rect width="960" height="300" rx="14" fill="#000"/>
+<rect x="1" y="1" width="958" height="298" rx="13" fill="none" stroke="#0b5a2b"/>
+<text x="48" y="48" class="dim">╔═╗ R A I N D R O P · B O O K M A R K ══════════════════════════════════════════╗</text>
+<text x="48" y="92" class="big"> █████╗ ██████╗ ███╗   ███╗██╗███╗   ██╗</text>
+<text x="48" y="114" class="big">██╔══██╗██╔══██╗████╗ ████║██║████╗  ██║</text>
+<text x="48" y="136" class="big">███████║██║  ██║██╔████╔██║██║██╔██╗ ██║</text>
+<text x="48" y="158" class="big">██╔══██║██║  ██║██║╚██╔╝██║██║██║╚██╗██║</text>
+<text x="48" y="180" class="big">██║  ██║██████╔╝██║ ╚═╝ ██║██║██║ ╚████║</text>
+<text x="48" y="202" class="big">╚═╝  ╚═╝╚═════╝ ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝</text>
+<text x="48" y="232" class="dim">╚═════════════════════════════════════════════════════════════════ P A N E L ═╝</text>
+<text x="590" y="112" class="fg">▌ terminal-style admin panel</text>
+<text x="590" y="136" class="fg">▌ for your Raindrop.io bookmarks</text>
+<text x="590" y="160" class="fg">▌ with Claude as the librarian</text>
+<text x="48" y="262" class="dim">root@bookmarks:~$</text><text x="210" y="262" class="wht">npm start</text><rect x="300" y="248" width="10" height="18" class="cur"/>
+<g transform="translate(590,196)">
+  <rect width="22" height="12" fill="#00e35a"/><rect x="30" width="22" height="12" fill="#00e5ff"/><rect x="60" width="22" height="12" fill="#ffe600"/>
+  <rect x="90" width="22" height="12" fill="#ff2bd6"/><rect x="120" width="22" height="12" fill="#ffffff"/><rect x="150" width="22" height="12" fill="#ff8a00"/><rect x="180" width="22" height="12" fill="#ff2b2b"/>
+</g>
+</svg>

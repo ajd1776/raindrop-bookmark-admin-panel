@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en" class="is-demo">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="panel-token" content="__PANEL_TOKEN__">
+<meta name="description" content="A terminal-style admin panel for your Raindrop.io bookmarks, with Claude as the librarian.">
+<title>Bookmark Admin Panel</title>
+<link rel="icon" href="icon.png">
+<style>
+/* Layout: full-screen black terminal. Sticky tab bar on top, banner + status line, then one of three pages.
+   Panels are framed with box-drawing characters (┌─┤ title ├──┐ … └──┘), key panels with double lines (╔═╗).
+   Colour key is strict: green = folders/topic · cyan = type/ · yellow = use/ · magenta = for/
+   white = totals · orange = needs action · red = problem · blue = highlight/selection only. */
+.tx {
+  --bg: #000000; --fg: #00e35a; --fg2: #0aa544; --dim: #0b7a35; --line: #0b5a2b; --faint: #062b15;
+  --blue: #081a66; --blue-fg: #e6ecff; --blue-line: #2f56ff;
+  --k-type: #00e5ff; --k-use: #ffe600; --k-for: #ff2bd6; --k-total: #ffffff; --k-act: #ff8a00; --k-bad: #ff2b2b;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+  --fs: 13px;
+  color-scheme: dark;
+  background: var(--bg); color: var(--fg);
+  font-family: var(--mono); font-size: var(--fs); line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-bottom: 28px;
+  min-height: 100%;
+}
+.tx ::selection { background: var(--blue); color: var(--blue-fg); }
+.tx-wrap { display: grid; gap: 14px; }
+.tx a { color: inherit; text-decoration: none; }
+.tx a:hover { background: var(--blue); color: var(--blue-fg); }
+.tx a:focus-visible, .tx-btn:focus-visible, .tx-tab:focus-visible, .tx-sel:focus-visible, .tx-in:focus-visible, .tx summary:focus-visible, .tx-run:focus-visible { outline: 1px solid var(--blue-line); outline-offset: 1px; background: var(--blue); color: var(--blue-fg); }
+
+/* category colours, used only for their meaning */
+.k-type { color: var(--k-type); } .k-use { color: var(--k-use); } .k-for { color: var(--k-for); }
+.k-topic { color: var(--fg); } .k-minor { color: var(--fg2); } .k-total { color: var(--k-total); }
+.k-act { color: var(--k-act); } .k-bad { color: var(--k-bad); } .k-dim { color: var(--dim); } .k-line { color: var(--line); }
+.tx b { font-weight: 700; color: var(--k-total); }
+
+/* ── top tab bar ── */
+.tx-nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 6; background: var(--bg);
+  margin-left: calc(-1 * max(16px, env(safe-area-inset-left, 0px))); margin-right: calc(-1 * max(16px, env(safe-area-inset-right, 0px)));
+  padding: 8px max(16px, env(safe-area-inset-right, 0px)) 0 max(16px, env(safe-area-inset-left, 0px)); }
+.tx-nav-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px; }
+.tx-tab { font: inherit; background: none; border: none; color: var(--fg); padding: 2px 1ch; cursor: pointer; white-space: nowrap; }
+.tx-tab kbd { font: inherit; color: var(--dim); }
+.tx-tab:hover { background: var(--faint); }
+.tx-tab[aria-current="page"] { background: var(--blue); color: var(--blue-fg); font-weight: 700; box-shadow: inset 0 -2px 0 var(--blue-line); }
+.tx-tab[aria-current="page"] kbd { color: var(--k-total); }
+.tx-nav .tx-sp { flex: 1; }
+.tx-nav .tx-live { color: var(--dim); white-space: nowrap; }
+.tx-nav .tx-live::before { content: "● "; color: var(--fg); }
+.tx-rule { display: flex; white-space: nowrap; overflow: hidden; color: var(--fg2); line-height: 1.2; }
+.tx-fill { flex: 1 1 0; min-width: 1ch; overflow: hidden; white-space: nowrap; }
+.tx-fill::before { content: "────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────"; }
+.tx-dfill::before { content: "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"; }
+.tx-rule .tx-fill::before { content: "════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════"; }
+
+/* ── header ── */
+.tx-top { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 3ch; align-items: end; padding-top: 8px; }
+.tx-banner { margin: 0; white-space: pre; line-height: 1.05; font-size: clamp(5px, 1.05vw, 12px); color: var(--fg); }
+.tx-banner .tx-bk { color: var(--dim); }
+.tx-sub { display: grid; gap: 2px; color: var(--dim); min-width: 0; }
+.tx-sub b { color: var(--fg); font-weight: 400; }
+.tx-status { margin: 0; color: var(--fg); }
+.tx-status .tx-pr { color: var(--dim); }
+.tx-cursor { display: inline-block; width: .6em; height: 1.05em; vertical-align: -2px; background: var(--fg); }
+@media (prefers-reduced-motion: no-preference) { .tx-cursor { animation: tx-blink 1.1s steps(1) infinite; } @keyframes tx-blink { 50% { opacity: 0; } } }
+@media (max-width: 760px) { .tx-top { grid-template-columns: minmax(0, 1fr); } }
+
+/* ── ASCII-framed panels ── */
+.tx-panel { position: relative; min-width: 0; display: flex; flex-direction: column; }
+.tx-panel::before { content: ""; position: absolute; left: calc(.5ch - .5px); right: calc(.5ch - .5px); top: .8em; bottom: .8em; border-left: 1px solid var(--line); border-right: 1px solid var(--line); pointer-events: none; }
+.tx-head, .tx-foot { display: flex; white-space: nowrap; color: var(--line); line-height: 1.6; min-width: 0; }
+.tx-head .tx-cmd { color: var(--fg); padding: 0 .5ch; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.tx-head .tx-cmd::before { content: "$ "; color: var(--dim); }
+.tx-head .tx-note { color: var(--dim); padding: 0 .5ch; flex: 0 1000 auto; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tx-dbl::before { border-left: 3px double var(--fg2); border-right: 3px double var(--fg2); left: calc(.5ch - 1.5px); right: calc(.5ch - 1.5px); }
+.tx-dbl .tx-head, .tx-dbl .tx-foot { color: var(--fg2); }
+.tx-body { padding: 4px 2ch 6px; min-width: 0; position: relative; }
+.tx-desc { margin: 0 0 8px; color: var(--dim); }
+.tx-desc::before { content: "# "; }
+.tx-txt { white-space: pre; overflow: hidden; min-height: 60px; }
+.tx-row { display: block; }
+.tx-row:hover { background: var(--blue); }
+.tx-row:hover .k-line, .tx-row:hover .k-dim { color: var(--blue-fg); }
+.tx-chart { position: relative; min-height: 180px; }
+.tx-tree { position: relative; min-height: 280px; }
+.tx-chart svg, .tx-tree svg { display: block; font-family: var(--mono); }
+.tx-tip { position: absolute; pointer-events: none; background: var(--blue); color: var(--blue-fg); border: 1px solid var(--blue-line); padding: 2px 1ch; font-size: 12px; white-space: nowrap; z-index: 3; }
+.tx-tip .tx-tk { color: var(--k-total); }
+.tx-ctrls { display: flex; flex-wrap: wrap; gap: 4px 2ch; align-items: center; margin-bottom: 8px; color: var(--dim); }
+.tx-fail { display: flex; align-items: center; justify-content: center; gap: 1ch; min-height: inherit; color: var(--dim); font-size: 12px; }
+.tx-fail::before { content: "✕"; color: var(--k-bad); }
+.tx [data-dash-source-state=refreshing] { opacity: .5; }
+.tx [data-dash-source-state=empty] { color: transparent; }
+
+/* ── text controls: [ like this ] ── */
+.tx-btn, .tx-run, .tx-sz { font: inherit; background: none; border: none; color: var(--fg); padding: 0 .5ch; cursor: pointer; white-space: nowrap; }
+.tx-btn::before, .tx-sz::before { content: "["; color: var(--dim); } .tx-btn::after, .tx-sz::after { content: "]"; color: var(--dim); }
+.tx-btn:hover, .tx-sz:hover { background: var(--blue); color: var(--blue-fg); }
+.tx-btn kbd { font: inherit; color: var(--k-total); }
+.tx-sz[aria-pressed="true"] { background: var(--blue); color: var(--blue-fg); font-weight: 700; }
+.tx-sz[aria-pressed="true"]::before, .tx-sz[aria-pressed="true"]::after { color: var(--blue-fg); }
+.tx-run { font-weight: 700; padding: 0 .5ch; }
+.tx-run::before { content: "[ "; color: var(--dim); font-weight: 400; } .tx-run::after { content: " ]"; color: var(--dim); font-weight: 400; }
+.tx-run:hover { background: var(--blue); color: var(--blue-fg); }
+.tx-writes { color: var(--k-act); font-size: 11px; margin-left: 1ch; }
+.tx-readonly { color: var(--dim); font-size: 11px; margin-left: 1ch; }
+.tx-sel, .tx-in { font: inherit; background-color: var(--bg); color: var(--fg); border: none; border-bottom: 1px solid var(--fg2); padding: 0 .5ch; max-width: 100%; }
+.tx-in { min-width: 0; width: 26ch; }
+.tx-in::placeholder { color: var(--dim); }
+
+/* ── key strip ── */
+.tx-key { display: flex; flex-wrap: wrap; gap: 2px 2ch; color: var(--dim); font-size: 12px; }
+.tx-key span { white-space: nowrap; }
+
+/* ── page title rule ── */
+.tx-ptitle { display: flex; white-space: nowrap; overflow: hidden; color: var(--fg2); }
+.tx-ptitle .tx-pt { color: var(--k-total); padding: 0 1ch; font-weight: 700; letter-spacing: .12em; }
+
+/* ── stat tiles as ASCII cards ── */
+.tx-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22ch), 1fr)); gap: 6px 2ch; }
+.tx-tile .tx-body { display: grid; gap: 0; padding-block: 0 2px; }
+.tx-tile .tx-num { font-size: 2.1em; line-height: 1.1; color: var(--k-total); font-weight: 700; }
+.tx-tile .tx-cap { color: var(--dim); font-size: 11px; }
+
+/* ── page grids, tuned for full screen ── */
+.tx-page { display: grid; gap: 14px; }
+.tx-g12 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px 2ch; }
+@media (min-width: 1100px) {
+  .tx-g12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+  .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+}
+.tx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--col, 34rem)), 1fr)); gap: 12px 2ch; }
+.tx-wide { grid-column: 1 / -1; }
+.tx-sz-s { --col: 24rem; --fs: 12px; }
+.tx-sz-m { --col: 34rem; }
+.tx-sz-l { --col: 54rem; --fs: 14px; }
+.tx-sz-s .tx-txt, .tx-sz-s .tx-chart { font-size: 11px; }
+.tx-sz-l .tx-txt { font-size: 14px; }
+
+/* ── sysinfo ── */
+.tx-sys { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 3ch; align-items: start; }
+.tx-logo { margin: 0; white-space: pre; color: var(--fg); line-height: 1.1; }
+.tx-kv { display: grid; gap: 0; min-width: 0; }
+.tx-kv .tx-k { color: var(--fg2); display: inline-block; min-width: 12ch; }
+.tx-kv .tx-k::after { content: " :"; color: var(--dim); }
+.tx-kv .tx-user { color: var(--fg); font-weight: 700; }
+.tx-kv .tx-hr { color: var(--line); overflow: hidden; white-space: nowrap; }
+@media (max-width: 560px) { .tx-sys { grid-template-columns: minmax(0, 1fr); } .tx-logo { display: none; } }
+
+/* ── commands ── */
+.tx-cmdtbl { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 6px 2ch; align-items: baseline; margin-top: 8px; }
+.tx-cmdtbl code { color: var(--fg); font-family: var(--mono); overflow-wrap: anywhere; }
+.tx-cmdtbl .tx-what { display: block; color: var(--dim); font-size: 12px; }
+.tx-inbox { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 2ch; }
+.tx-pill { padding: 0 .5ch; }
+.tx-pill::before { content: "["; } .tx-pill::after { content: "]"; }
+.tx-hint { color: var(--dim); font-size: 12px; margin: 10px 0 0; }
+
+/* ── tables ── */
+.tx-table-box { max-height: 360px; overflow: auto; }
+.tx-tall .tx-table-box { max-height: 520px; }
+.tx-table { width: 100%; border-collapse: collapse; }
+.tx-table th { position: sticky; top: 0; background: var(--bg); color: var(--dim); text-align: left; font-weight: 400; font-size: 11px; letter-spacing: .06em; padding: 0 1ch 2px; border-bottom: 1px dashed var(--line); text-transform: uppercase; }
+.tx-table td { padding: 1px 1ch; vertical-align: top; }
+.tx-table td:first-child::before { content: "› "; color: var(--line); }
+.tx-table .tx-n { text-align: right; }
+.tx-table tbody tr:hover { background: var(--blue); color: var(--blue-fg); }
+.tx-table .tx-date { color: var(--dim); white-space: nowrap; }
+.tx-filter { display: flex; flex-wrap: wrap; gap: 4px 2ch; align-items: center; color: var(--dim); }
+
+/* ── file tree, flowing into columns on wide screens ── */
+.tx-ftool { display: flex; flex-wrap: wrap; gap: 6px 2ch; align-items: center; margin-bottom: 10px; }
+.tx-ft { white-space: pre; line-height: 1.55; display: block; }
+.tx-ft > details { margin-top: 2px; }
+.tx-ft details > summary { list-style: none; cursor: pointer; display: block; overflow: hidden; text-overflow: ellipsis; }
+.tx-ft details > summary::-webkit-details-marker { display: none; }
+.tx-ft summary:hover { background: var(--blue); color: var(--blue-fg); }
+.tx-ft .tx-tw::before { content: "▸ "; color: var(--fg2); }
+.tx-ft details[open] > summary .tx-tw::before { content: "▾ "; color: var(--fg); }
+.tx-ft .tx-fn { color: var(--fg); font-weight: 700; }
+.tx-ft .tx-bk { display: block; overflow: hidden; text-overflow: ellipsis; }
+.tx-ft .tx-bk:hover { background: var(--blue); }
+.tx-ft .tx-bk:hover .k-line { color: var(--blue-fg); }
+.tx-ft .tx-bt { color: var(--fg); }
+.tx-tile .tx-cmd::before { content: none; }
+.tx-tile .tx-head .tx-cmd { color: var(--dim); font-size: 11px; letter-spacing: .08em; }
+html, body { margin: 0; background: #000; }
+[hidden] { display: none !important; }
+.tx-panel > .tx-body { flex: 1 1 auto; }
+.tx-tile .tx-cmd::before { content: none; }
+.tx-tile .tx-head .tx-cmd { color: var(--dim); font-size: 11px; letter-spacing: .08em; }
+.tx-msg { margin: 8px 0 0; min-height: 1.4em; }
+.tx-msg::before { content: "› "; color: var(--dim); }
+.tx-strike { text-decoration: line-through; text-decoration-color: var(--line); }
+.tx-review td:first-child::before { content: none; }
+.tx-review input[type=checkbox] { accent-color: var(--fg); }
+.tx-field { display: grid; grid-template-columns: 14ch minmax(0, 1fr); align-items: baseline; gap: 1ch; margin: 6px 0; color: var(--fg2); }
+.tx-field .tx-in, .tx-field .tx-sel { width: 100%; max-width: 46ch; }
+.tx-step { margin: 12px 0 4px; color: var(--dim); }
+.tx-step b { color: var(--fg); }
+.tx-step code, .tx-cmdtbl code { color: var(--fg); }
+.tx-code { margin: 6px 0 0; padding: 8px 2ch; border-left: 2px solid var(--fg2); color: var(--fg); white-space: pre-wrap; }
+.tx-hr { color: var(--line); white-space: nowrap; overflow: hidden; }
+.tx-mode { color: var(--k-act); white-space: nowrap; }
+.tx-mode::before { content: "[ "; color: var(--dim); } .tx-mode::after { content: " ]"; color: var(--dim); }
+.tx-demo-note { margin: 0; color: var(--dim); }
+:root:not(.is-demo) .tx-demo-note { display: none; }
+:root:not(.is-demo) .tx-mode { color: var(--fg); }
+.tx-run:disabled { opacity: .5; cursor: wait; }
+.tx-cmdtbl > span:last-child:empty { display: none; }
+</style>
+
+</head>
+<body>
+<div class="tx">
+<nav class="tx-nav" aria-label="Pages"><div class="tx-nav-row">
+<button class="tx-tab" type="button" data-page="admin" aria-current="page"><kbd>1</kbd> COMMANDS + ADMIN</button><span class="k-line">│</span>
+<button class="tx-tab" type="button" data-page="stats"><kbd>2</kbd> STATS + CHARTS</button><span class="k-line">│</span>
+<button class="tx-tab" type="button" data-page="files"><kbd>3</kbd> FILE STRUCTURE</button><span class="k-line">│</span>
+<button class="tx-tab" type="button" data-page="connect"><kbd>4</kbd> CONNECT</button>
+<span class="tx-sp"></span><span class="tx-mode"><span class="js-mode">DEMO</span></span></div>
+<div class="tx-rule"><span class="tx-fill"></span></div></nav>
+<div class="tx-wrap">
+<header class="tx-top" id="top"><pre class="tx-banner" aria-label="Bookmark Admin Panel"><span class="tx-bk">  ╔═╗ B O O K M A R K ═══════════════════════════════════╗</span>
+ █████╗ ██████╗ ███╗   ███╗██╗███╗   ██╗
+██╔══██╗██╔══██╗████╗ ████║██║████╗  ██║
+███████║██║  ██║██╔████╔██║██║██╔██╗ ██║
+██╔══██║██║  ██║██║╚██╔╝██║██║██║╚██╗██║
+██║  ██║██████╔╝██║ ╚═╝ ██║██║██║ ╚████║
+╚═╝  ╚═╝╚═════╝ ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝
+<span class="tx-bk">  ╚═════════════════════════════════════ P A N E L ═╝</span></pre>
+<div class="tx-sub"><span>user <b class="js-user">demo</b> · source <b>raindrop.io</b> · span <b data-draw="range" data-source="per_year">—</b> · tag net <b>7 layers</b></span>
+<span>keys <b>1 2 3 4</b> pages · <b>R</b> re-read · <b>/</b> search files</span>
+<p class="tx-demo-note"><span class="k-act">[ DEMO ]</span> made-up sample library · connect your own on the <b>CONNECT</b> tab</p>
+<p class="tx-status" id="takeaway"><span class="tx-pr">root@bookmarks:~$</span> <b data-draw="fact" data-source="facts" data-field="topHub">—</b> leads with <b data-draw="fact" data-source="facts" data-field="topHubShare">—</b> of <b data-draw="fact" data-source="facts" data-field="bookmarks">—</b> bookmarks · peak <b data-draw="fact" data-source="facts" data-field="busiestYear">—</b> · inbox <span class="tx-pill" data-draw="inbox-pill" data-source="kpis" data-field="inbox">—</span> <span class="tx-cursor" aria-hidden="true"></span></p></div>
+</header>
+<section class="tx-page" id="admin" aria-label="Commands and admin">
+<div class="tx-ptitle"><span>▓▒░ </span><span class="tx-pt">COMMANDS + ADMIN</span><span> ░▒▓ </span><span class="tx-fill tx-dfill"></span></div>
+<div class="tx-g12">
+<section class="tx-panel tx-dbl c4" id="sysinfo"><div class="tx-head"><span>╔═╡</span><span class="tx-cmd">neofetch</span><span>╞═</span><span class="tx-note">system readout</span><span class="tx-fill tx-dfill"></span><span>╗</span></div><div class="tx-body"><div class="tx-sys"><pre class="tx-logo" aria-hidden="true">  ▄███████████▄
+  ██░░░░░░░░░██
+  ██░▓▓▓▓▓▓▓░██
+  ██░▓  ◆  ▓░██
+  ██░▓▓▓▓▓▓▓░██
+  ██░░░░░░░░░██
+  ██░░░▄█▄░░░██
+  ██░░▄▀ ▀▄░░██
+  ██░▄▀   ▀▄░██
+  ██▄▀     ▀▄██
+  ▀▀         ▀▀</pre><div class="tx-kv">
+<span class="tx-user"><span class="js-user">demo</span>@raindrop</span><span class="tx-hr">────────────────────────</span>
+<span><span class="tx-k">mode</span><b class="js-mode">DEMO</b></span>
+<span><span class="tx-k">bookmarks</span><b data-draw="kpi" data-source="kpis" data-field="bookmarks">—</b></span>
+<span><span class="tx-k">hubs</span><b data-draw="kpi" data-source="kpis" data-field="hubs">—</b></span>
+<span><span class="tx-k">folders</span><b data-draw="kpi" data-source="kpis" data-field="folders">—</b> · empty <span data-draw="kpi-flag" data-flag="bad" data-source="facts" data-field="emptyCount">—</span></span>
+<span><span class="tx-k">tags</span><b data-draw="kpi" data-source="kpis" data-field="tags">—</b> in 7 layers</span>
+<span><span class="tx-k">tag links</span><b data-draw="kpi" data-source="kpis" data-field="links">—</b> · <b data-draw="kpi" data-source="kpis" data-field="avg">—</b> each</span>
+<span><span class="tx-k">inbox</span><span data-draw="kpi-flag" data-flag="act" data-source="kpis" data-field="inbox">—</span> waiting</span>
+<span><span class="tx-k">trash</span><span data-draw="kpi" data-source="kpis" data-field="trash">—</span></span>
+<span><span class="tx-k">last save</span><span data-draw="last-save" data-source="recent">—</span></span>
+<span class="tx-hr">────────────────────────</span>
+<span class="tx-key"><span class="k-topic">███</span><span class="k-type">███</span><span class="k-use">███</span><span class="k-for">███</span><span class="k-total">███</span><span class="k-act">███</span><span class="k-bad">███</span></span>
+</div></div></div><div class="tx-foot"><span>╚</span><span class="tx-fill tx-dfill"></span><span>╝</span></div></section>
+<section class="tx-panel tx-dbl c8" id="commands"><div class="tx-head"><span>╔═╡</span><span class="tx-cmd">librarian</span><span>╞═</span><span class="tx-note">Claude tidies your bookmarks</span><span class="tx-fill tx-dfill"></span><span>╗</span></div><div class="tx-body"><div class="tx-inbox"><button class="tx-btn tx-refresh" type="button" id="refresh-btn"><kbd>R</kbd> re-read raindrop</button><span>inbox <span class="tx-pill" data-draw="inbox-pill" data-source="kpis" data-field="inbox">—</span></span></div><p class="tx-desc" style="margin-top:8px">Claude proposes clean titles, tags and folders. Nothing changes until you review and press APPLY.</p><div class="tx-cmdtbl"><button class="tx-run" type="button" data-plan="inbox">▶ SORT INBOX</button><span><code>librarian sort --inbox</code><span class="tx-writes">! changes bookmarks after you approve</span><span class="tx-what">rename, tag and file everything in your inbox folder</span></span><span></span><button class="tx-run" type="button" data-plan="audit">▶ AUDIT ALL</button><span><code>librarian audit --all</code><span class="tx-writes">! changes bookmarks after you approve</span><span class="tx-what">check every bookmark follows the naming and tag rules</span></span><span></span><button class="tx-run" type="button" data-plan="audit-folder">▶ AUDIT FOLDER</button><span><code>librarian audit --folder</code><span class="tx-writes">! changes bookmarks after you approve</span><span class="tx-what">check one folder and everything inside it</span><span class="tx-what">folder <select class="tx-sel" id="audit-folder" data-draw="folder-sel" data-source="collections" aria-label="Folder to audit"></select></span></span><span></span></div><p class="tx-msg js-plan-msg k-dim" aria-live="polite"></p><div class="js-terminal" hidden><div class="tx-hr" style="margin-top:10px">── or run the Claude Code commands in Terminal ──</div><div class="tx-cmdtbl"><button class="tx-run" type="button" data-run="inbox">▶ RUN</button><span><code>/raindrop-inbox</code><span class="tx-what">sort the inbox with Claude Code</span></span><button class="tx-btn tx-copy" type="button" data-copy='/raindrop-inbox'><span class="tx-c1">copy</span><span class="tx-c2" hidden>copied ✓</span></button><button class="tx-run" type="button" data-run="audit-dry">▶ RUN</button><span><code>/raindrop-audit dry run</code><span class="tx-what">report every rule break, change nothing</span></span><button class="tx-btn tx-copy" type="button" data-copy='/raindrop-audit dry run'><span class="tx-c1">copy</span><span class="tx-c2" hidden>copied ✓</span></button><button class="tx-run" type="button" data-run="checkup">▶ RUN</button><span><code>/raindrop:library-checkup</code><span class="tx-what">duplicates, broken links, stray tags</span></span><button class="tx-btn tx-copy" type="button" data-copy='/raindrop:library-checkup'><span class="tx-c1">copy</span><span class="tx-c2" hidden>copied ✓</span></button></div></div></div><div class="tx-foot"><span>╚</span><span class="tx-fill tx-dfill"></span><span>╝</span></div></section>
+<div class="c12" id="review" hidden><section class="tx-panel "><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">review --plan <span class="js-plan-title"></span></span><span>├─</span><span class="tx-note">proposed changes</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><p class="tx-desc"><span class="js-plan-count"></span> · untick anything you want to keep as it is</p><div class="tx-inbox" style="margin-bottom:8px"><button class="tx-run" type="button" id="apply-picked">▶ APPLY TICKED</button><button class="tx-btn" type="button" id="apply-all">apply all</button><button class="tx-btn" type="button" id="discard">discard</button></div><div class="tx-table-box" style="max-height:520px"><table class="tx-table tx-review"><thead><tr><th>✓</th><th>Title: before → after</th><th>Tags</th><th>Folder</th><th>Why</th></tr></thead><tbody id="review-body"></tbody></table></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section></div>
+<section class="tx-panel c12" id="queue"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">ls ~/inbox</span><span>├─</span><span class="tx-note">waiting to be sorted</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><p class="tx-desc tx-inbox-empty" style="margin:0">[ OK ] Your inbox folder is empty. Nothing waiting to sort.</p><div class="tx-table-box tx-inbox-box" hidden><table class="tx-table" data-source="inbox" data-row-key="id"><thead><tr><th data-field="title">Waiting to sort</th><th data-field="domain">Site</th><th data-field="created">Saved</th></tr></thead><tbody data-draw="inbox"></tbody></table></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel c5 tx-tall" id="health"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">fsck --thin</span><span>├─</span><span class="tx-note">3 or fewer bookmarks</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><p class="tx-desc"><span class="k-bad">EMPTY</span> holds nothing yet. <span class="k-act">THIN</span> holds 1 to 3 and could merge into its parent.</p><div class="tx-table-box"><table class="tx-table" data-source="thin" data-row-key="id"><thead><tr><th data-field="folder">Folder</th><th data-field="hub">Hub</th><th class="tx-n" data-field="total">Items</th><th data-field="status">Status</th></tr></thead><tbody data-draw="thin"></tbody></table></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel c7 tx-tall" id="recent"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tail -n 15 saves.log</span><span>├─</span><span class="tx-note">newest first</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-table-box"><table class="tx-table" data-source="recent" data-row-key="id"><thead><tr><th data-field="title">Bookmark</th><th data-field="folder">Folder</th><th data-field="created">Saved</th></tr></thead><tbody data-draw="recent"></tbody></table></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+</div>
+</section>
+<section class="tx-page" id="stats" aria-label="Stats and charts" hidden>
+<div class="tx-ptitle"><span>▓▒░ </span><span class="tx-pt">STATS + CHARTS</span><span> ░▒▓ </span><span class="tx-fill tx-dfill"></span></div>
+<div class="tx-filter" id="size-bar"><span>$ chart size</span><button class="tx-sz" type="button" data-size="s" aria-pressed="false">S compact</button><button class="tx-sz" type="button" data-size="m" aria-pressed="true">M standard</button><button class="tx-sz" type="button" data-size="l" aria-pressed="false">L large</button><span class="k-line">│</span><span>$ grep --hub</span><select class="tx-sel" id="hub-sel" data-draw="hub-sel" aria-label="Filter tag charts by hub" data-source="hubs"></select><span class="k-dim"># limits the tag charts to one hub</span></div>
+<div class="tx-key" aria-label="Colour key"><span>key ›</span><span class="k-topic">█ folders · topic/</span><span class="k-type">█ type/</span><span class="k-use">█ use/</span><span class="k-for">█ for/</span><span class="k-minor">◆ vibe/ ▲ place/ ● via/</span><span class="k-total">█ totals</span><span class="k-act">█ needs action</span><span class="k-bad">█ problem</span></div>
+<div class="tx-tiles" aria-label="Headline stats"><div class="tx-panel tx-tile"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">BOOKMARKS</span><span>├─</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><span class="tx-num" data-draw="kpi" data-source="kpis" data-field="bookmarks">—</span><span class="tx-cap">all hubs + inbox</span></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></div><div class="tx-panel tx-tile"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">HUBS</span><span>├─</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><span class="tx-num" data-draw="kpi" data-source="kpis" data-field="hubs">—</span><span class="tx-cap">top-level folders</span></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></div><div class="tx-panel tx-tile"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">FOLDERS</span><span>├─</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><span class="tx-num" data-draw="kpi" data-source="kpis" data-field="folders">—</span><span class="tx-cap">hubs + subfolders</span></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></div><div class="tx-panel tx-tile"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">TAGS</span><span>├─</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><span class="tx-num" data-draw="kpi" data-source="kpis" data-field="tags">—</span><span class="tx-cap">unique, 7 layers</span></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></div><div class="tx-panel tx-tile"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">TAG LINKS</span><span>├─</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><span class="tx-num" data-draw="kpi" data-source="kpis" data-field="links">—</span><span class="tx-cap">tag-to-bookmark joins</span></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></div><div class="tx-panel tx-tile"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">TAGS EACH</span><span>├─</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><span class="tx-num" data-draw="kpi" data-source="kpis" data-field="avg">—</span><span class="tx-cap">average per bookmark</span></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></div></div>
+<div class="tx-grid tx-sz-m" id="stats-grid">
+<section class="tx-panel tx-wide" id="hubs"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">df -h /hubs</span><span>├─</span><span class="tx-note">share of the library, one strip</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-txt dash-skeleton" data-draw="hubs" data-source="hubs"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="timeline"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">history --per-year</span><span>├─</span><span class="tx-note">bars: saved · dashed line: running total</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-chart dash-skeleton" data-draw="years" data-source="per_year"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="heat"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">heatmap --hub x --year</span><span>├─</span><span class="tx-note">· ░ ▒ ▓ █ fewer → more</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-txt dash-skeleton" data-draw="heat" data-source="year_hub hubs per_year" style="position:relative"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="compare"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">diff --year A B</span><span>├─</span><span class="tx-note">A ◄ hub ► B</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-ctrls"><label for="ya-sel">A</label><select class="tx-sel" id="ya-sel" data-draw="year-sel" data-param="ya" aria-label="Year A" data-source="per_year"></select><label for="yb-sel">B</label><select class="tx-sel" id="yb-sel" data-draw="year-sel" data-param="yb" aria-label="Year B" data-source="per_year"></select><span>▲ more in B · ▼ fewer</span></div><div class="tx-txt dash-skeleton" data-draw="compare" data-source="year_hub hubs"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="project"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">track --for</span><span>├─</span><span class="tx-note"><span class="k-for">for/</span> project saves per year</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-ctrls"><label for="project-sel">project</label><select class="tx-sel" id="project-sel" data-draw="project-sel" aria-label="Project" data-source="tags"></select></div><div class="tx-txt dash-skeleton" data-draw="project" data-source="project_year per_year"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel tx-wide" id="tree"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">du --treemap</span><span>├─</span><span class="tx-note">area = bookmarks in each folder</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-tree dash-skeleton" data-draw="tree" data-source="collections"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="layers"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tags --waffle</span><span>├─</span><span class="tx-note">100 cells = all tag links</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-txt dash-skeleton" data-draw="waffle" data-source="layers"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="facts-panel"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">cat insights.txt</span><span>├─</span><span class="tx-note">worked out live</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div style="display:grid;gap:3px"><span><span class="k-dim">01 ›</span> most-used tag <b data-draw="fact" data-source="facts" data-field="topTag">—</b> on <b data-draw="fact" data-source="facts" data-field="topTagN">—</b> bookmarks</span><span><span class="k-dim">02 ›</span> top project <span class="k-for">for/<span data-draw="fact" data-source="facts" data-field="topProject">—</span></span> on <b data-draw="fact" data-source="facts" data-field="topProjectN">—</b>, <b data-draw="fact" data-source="facts" data-field="topProjectShare">—</b> of the library</span><span><span class="k-dim">03 ›</span> busiest year <b data-draw="fact" data-source="facts" data-field="busiestYear">—</b> with <b data-draw="fact" data-source="facts" data-field="busiestN">—</b> saves</span><span><span class="k-dim">04 ›</span> <b data-draw="fact" data-source="facts" data-field="recentShare">—</b> saved in 2023 or later</span><span><span class="k-dim">05 ›</span> top source site <b data-draw="fact" data-source="facts" data-field="topVia">—</b>, <b data-draw="fact" data-source="facts" data-field="topViaN">—</b> pages</span><span><span class="k-dim">06 ›</span> top place <b data-draw="fact" data-source="facts" data-field="topPlace">—</b>, <b data-draw="fact" data-source="facts" data-field="topPlaceShare">—</b> of place tags</span><span><span class="k-dim">07 ›</span> biggest topic <b data-draw="fact" data-source="facts" data-field="topTopic">—</b> on <b data-draw="fact" data-source="facts" data-field="topTopicN">—</b>, of <b data-draw="fact" data-source="facts" data-field="topicCount">—</b> topics</span><span><span class="k-dim">08 ›</span> biggest folder <b data-draw="fact" data-source="facts" data-field="topFolder">—</b>, <b data-draw="fact" data-source="facts" data-field="topFolderN">—</b> bookmarks</span><span><span class="k-dim">09 ›</span> <span data-draw="kpi-flag" data-flag="bad" data-source="facts" data-field="emptyCount">—</span> empty folders · <b data-draw="kpi" data-source="kpis" data-field="trash">—</b> in Trash</span></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="use"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tags --layer=<span class="k-use">use</span></span><span>├─</span><span class="tx-note">why you saved it</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-txt dash-skeleton" data-draw="lolli" data-layer="use" data-source="hub_tags"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="type"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tags --layer=<span class="k-type">type</span></span><span>├─</span><span class="tx-note">what kind of page</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-txt dash-skeleton" data-draw="bars" data-layer="type" data-source="hub_tags"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="for"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tags --layer=<span class="k-for">for</span></span><span>├─</span><span class="tx-note">projects</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-txt dash-skeleton" data-draw="lolli" data-layer="for" data-source="hub_tags"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel " id="topic"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tags --layer=topic --top=20</span><span>├─</span><span class="tx-note">what it's about</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-txt dash-skeleton" data-draw="bars" data-layer="topic" data-limit="20" data-glyph="▓" data-source="hub_tags"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel tx-wide" id="minor"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tags --layer=vibe,place,via</span><span>├─</span><span class="tx-note">aesthetic · where · platform</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-grid" style="--col:22rem"><div><div class="k-minor">◆ vibe/</div><div class="tx-txt dash-skeleton" data-draw="frac" data-layer="vibe" data-sym="◆" data-source="hub_tags"></div></div><div><div class="k-minor">▲ place/</div><div class="tx-txt dash-skeleton" data-draw="frac" data-layer="place" data-sym="▲" data-source="hub_tags"></div></div><div><div class="k-minor">● via/</div><div class="tx-txt dash-skeleton" data-draw="frac" data-layer="via" data-sym="●" data-source="hub_tags"></div></div></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+</div>
+</section>
+<section class="tx-page" id="files" aria-label="File structure" hidden>
+<div class="tx-ptitle"><span>▓▒░ </span><span class="tx-pt">FILE STRUCTURE</span><span> ░▒▓ </span><span class="tx-fill tx-dfill"></span></div>
+<section class="tx-panel " id="filetree"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">tree ~/raindrop</span><span>├─</span><span class="tx-note">click a folder to open it · bookmarks open in a new tab</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><p class="tx-desc"><span class="k-total">(n)</span> bookmarks inside · <span class="k-type">type/</span> and <span class="k-use">use/</span> tag beside each link · <span class="k-bad">empty</span> folders · <span class="k-act">inbox</span> · press / to search</p><div class="dash-skeleton" data-draw="ftree" data-source="collections bm" style="min-height:320px"></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+</section>
+<section class="tx-page" id="connect" aria-label="Connect accounts" hidden>
+<div class="tx-ptitle"><span>▓▒░ </span><span class="tx-pt">CONNECT</span><span> ░▒▓ </span><span class="tx-fill tx-dfill"></span></div>
+<div class="js-no-server tx-step k-act">This is the static demo with a made-up library. To connect your own Raindrop and Claude, run it on your computer:</div><pre class="js-no-server tx-code">git clone https://github.com/ajd1776/raindrop-bookmark-admin-panel
+cd raindrop-bookmark-admin-panel
+npm install
+npm start        # then open http://127.0.0.1:4517</pre>
+<div class="tx-g12 js-needs-server">
+<section class="tx-panel tx-dbl c7" id="cx-raindrop"><div class="tx-head"><span>╔═╡</span><span class="tx-cmd">connect raindrop</span><span>╞═</span><span class="tx-note">your bookmarks</span><span class="tx-fill tx-dfill"></span><span>╗</span></div><div class="tx-body"><p class="tx-desc">status <span class="js-rd-flag">[ -- ]</span> <span class="js-rd-status">not connected</span></p><div class="tx-step"><b>A · quick</b> paste a personal token: raindrop.io › Settings › Integrations › <i>Create new app</i> › <i>Create test token</i>.</div><label class="tx-field" for="rd-token"><span>test token</span><input class="tx-in" id="rd-token" type="password" placeholder="paste token" autocomplete="off" spellcheck="false"></label><div class="tx-inbox"><button class="tx-run" type="button" id="rd-save">▶ CONNECT</button><button class="tx-btn" type="button" data-disconnect="raindrop">disconnect</button></div><div class="tx-step"><b>B · sign in</b> with Raindrop (OAuth). In that same app set the redirect URI to <code class="js-redirect"></code>, then paste its client ID and secret.</div><label class="tx-field" for="rd-client-id"><span>client ID</span><input class="tx-in" id="rd-client-id" type="text" placeholder="client id" autocomplete="off" spellcheck="false"></label><label class="tx-field" for="rd-client-secret"><span>client secret</span><input class="tx-in" id="rd-client-secret" type="password" placeholder="client secret" autocomplete="off" spellcheck="false"></label><div class="tx-inbox"><button class="tx-run" type="button" id="rd-oauth">▶ SIGN IN WITH RAINDROP</button></div><p class="tx-msg js-rd-msg k-dim" aria-live="polite"></p></div><div class="tx-foot"><span>╚</span><span class="tx-fill tx-dfill"></span><span>╝</span></div></section>
+<section class="tx-panel tx-dbl c5" id="cx-claude"><div class="tx-head"><span>╔═╡</span><span class="tx-cmd">connect claude</span><span>╞═</span><span class="tx-note">the librarian</span><span class="tx-fill tx-dfill"></span><span>╗</span></div><div class="tx-body"><p class="tx-desc">status <span class="js-cl-flag">[ -- ]</span> <span class="js-cl-status">not connected</span></p><div class="tx-step">Create a key at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener noreferrer">platform.claude.com › API keys</a>. Usage is billed to your own account.</div><label class="tx-field" for="cl-key"><span>API key</span><input class="tx-in" id="cl-key" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false"></label><label class="tx-field" for="cl-model"><span>model</span><select class="tx-sel" id="cl-model"><option value="claude-opus-5-5">claude-opus-5-5 (best)</option><option value="claude-sonnet-5-5">claude-sonnet-5-5 (cheaper)</option><option value="claude-haiku-5-5">claude-haiku-5-5 (cheapest)</option></select></label><div class="tx-inbox"><button class="tx-run" type="button" id="cl-save">▶ CONNECT</button><button class="tx-btn" type="button" data-disconnect="claude">disconnect</button></div><p class="tx-msg js-cl-msg k-dim" aria-live="polite"></p></div><div class="tx-foot"><span>╚</span><span class="tx-fill tx-dfill"></span><span>╝</span></div></section>
+<section class="tx-panel c7" id="cx-code"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">claude-code --optional</span><span>├─</span><span class="tx-note">run commands in Terminal</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><p class="tx-desc">Claude Code <span class="js-cc-flag">[ -- ]</span> <span class="js-cc-status">not found</span> · optional</p><div class="tx-step">If you use Claude Code with a Raindrop connector, install the bundled commands. The ▶ RUN buttons on the admin page then open them in Terminal (macOS):</div><div class="tx-cmdtbl"><span class="k-dim">$</span><code>npm run install-skills</code><button class="tx-btn tx-copy" type="button" data-copy="npm run install-skills"><span class="tx-c1">copy</span><span class="tx-c2" hidden>copied ✓</span></button></div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+<section class="tx-panel c5" id="cx-settings"><div class="tx-head"><span>┌─┤</span><span class="tx-cmd">settings</span><span>├─</span><span class="tx-note">inbox and privacy</span><span class="tx-fill"></span><span>┐</span></div><div class="tx-body"><div class="tx-step">The top-level folder you save new links into. The librarian sorts what lands here.</div><label class="tx-field" for="inbox-name"><span>inbox folder</span><input class="tx-in" id="inbox-name" type="text" placeholder="Recently Saved" autocomplete="off" spellcheck="false"></label><div class="tx-inbox"><button class="tx-btn" type="button" id="inbox-save">save</button></div><p class="tx-msg js-inbox-msg k-dim"></p><div class="tx-step">Your token and key are stored only on this computer in <code>~/.config/raindrop-admin-panel/config.json</code> (readable by you only), and are sent only to api.raindrop.io and api.anthropic.com.</div></div><div class="tx-foot"><span>└</span><span class="tx-fill"></span><span>┘</span></div></section>
+</div>
+</section>
+</div>
+</div>
+<script src="vendor/d3.min.js"></script>
+<script src="js/dash-shim.js"></script>
+<script src="js/demo-data.js"></script>
+<script src="js/helpers.js"></script>
+<script src="js/calcs.js"></script>
+<script src="js/draw.js"></script>
+<script src="js/nav.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

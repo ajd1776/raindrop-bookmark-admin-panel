@@ -1,0 +1,19 @@
+{
+  "name": "raindrop-bookmark-admin-panel",
+  "version": "1.0.0",
+  "description": "A terminal-style admin panel for your Raindrop.io bookmarks, with Claude as the librarian.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "install-skills": "mkdir -p ~/.claude/skills && cp -R skills/. ~/.claude/skills/",
+    "app": "bash macos/build.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0"
+  }
+}
