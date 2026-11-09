@@ -52,15 +52,20 @@ func startServer() -> Bool {
   return false
 }
 
+// Chrome must be started by macOS, never as a child of this app. A child process is charged to its
+// parent for privacy permissions, so Chrome's camera, microphone and file requests would all appear
+// under this app's name, for as long as that Chrome stays open.
 func openWindow() {
-  let chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-  if FileManager.default.isExecutableFile(atPath: chrome) {
-    let p = Process()
-    p.executableURL = URL(fileURLWithPath: chrome)
-    p.arguments = ["--app=\(URL_STR)", "--window-size=1440,920"]
-    try? p.run()
-  } else if let u = URL(string: URL_STR) {
+  guard let u = URL(string: URL_STR) else { return }
+  guard let chrome = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.google.Chrome") else {
     NSWorkspace.shared.open(u)
+    return
+  }
+  let config = NSWorkspace.OpenConfiguration()
+  config.arguments = ["--app=\(URL_STR)", "--window-size=1440,920"]
+  config.createsNewApplicationInstance = true // arguments only reach a new instance; Chrome hands the window to any copy already open
+  NSWorkspace.shared.openApplication(at: chrome, configuration: config) { _, error in
+    if error != nil { DispatchQueue.main.async { NSWorkspace.shared.open(u) } }
   }
 }
 
